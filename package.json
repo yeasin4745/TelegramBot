@@ -1,0 +1,19 @@
+{
+  "name": "TelegramBot",
+  "version": "1.0.0",
+  "description": "A simple Telegram bot built with node-telegram-bot-api",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "author": "Yeasin",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
