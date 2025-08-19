@@ -4,16 +4,12 @@
   "description": "A simple Telegram bot built with node-telegram-bot-api",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.js"
   },
   "author": "Yeasin",
-  "license": "MIT",
+  "license": "",
   "dependencies": {
     "dotenv": "^16.4.5",
     "node-telegram-bot-api": "^0.66.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.0"
   }
 }
