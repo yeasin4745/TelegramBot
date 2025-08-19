@@ -1,12 +1,29 @@
 const TelegramBot = require('node-telegram-bot-api');
-require('dotenv').config()
+const express = require('express');
+require('dotenv').config();
+
+const app = express();
+const port = process.env.PORT || 3000;
 
 const token = process.env.TOKEN;
 
-// polling চালু
-const bot = new TelegramBot(token, { polling: true });
+// Render এর জন্য PUBLIC URL লাগবে (deploy করার পর Render থেকে URL পাবেন)
+const url = process.env.RENDER_EXTERNAL_URL || `https://yourapp.onrender.com`;
+const bot = new TelegramBot(token, { webHook: true });
 
-// প্রশ্ন-উত্তর ডাটাবেস
+// Telegram কে জানানো হবে: নতুন মেসেজ আসলে কোথায় পাঠাতে হবে
+bot.setWebHook(`${url}/bot${token}`);
+
+// Express route
+app.use(express.json());
+
+// Telegram এর webhook endpoint
+app.post(`/bot${token}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Q/A Database
 const qaDatabase = [
   { question: 'hello', answer: 'Hello! How can I help you today? 😊' },
   { question: 'hi', answer: 'Hi there! What’s up? 😄' },
@@ -15,6 +32,7 @@ const qaDatabase = [
   { question: 'bye', answer: 'Goodbye! Have a great day! 👋' }
 ];
 
+// মেসেজ হ্যান্ডলার
 bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const userMessage = msg.text?.toLowerCase();
@@ -26,4 +44,9 @@ bot.on('message', (msg) => {
   } else {
     bot.sendMessage(chatId, "Sorry, I don't know the answer to that yet. 😔");
   }
+});
+
+// Render-এ সার্ভার চালু
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
