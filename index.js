@@ -35,20 +35,33 @@ const qaRules = [
   { pattern: /get|getting/i, answer: "What are you trying to get? 🤔 I can try to help." },
 ];
 
-// মেসেজ হ্যান্ডলার
-bot.on('message', (msg) => {
+
+ 
+// /start কমান্ড হ্যান্ডলার
+bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  const userMessage = msg.text?.toLowerCase();
+  const name = msg.from.first_name || "User";
 
-  if (!userMessage) return;
+  bot.sendMessage(chatId, `👋 Welcome ${name}!  
+I am Yeasin’s friendly Telegram bot 🤖  
+You can say hello, ask me questions, or just chat casually.  
+Let’s get started! 🚀`);
+});
 
-  // Rule match খোঁজা
+//  (Regex + fallback)
+bot.on("message", (msg) => {
+  const chatId = msg.chat.id;
+  const userMessage = msg.text;
+
+  // যদি মেসেজটা /start হয় তাহলে return করে দেব, 
+
+  if (userMessage && userMessage.startsWith("/start")) return;
+
   const match = qaRules.find(rule => rule.pattern.test(userMessage));
 
   if (match) {
     bot.sendMessage(chatId, match.answer);
   } else {
-    
     bot.sendMessage(chatId, "I don’t know this yet 😔 আমি এখনো কিছু জানি না, আমি মাত্র শিখতেছি 📖");
   }
 });
