@@ -7,11 +7,10 @@ const port = process.env.PORT || 3000;
 
 const token = process.env.TOKEN;
 
-// Render এর জন্য PUBLIC URL লাগবে (deploy করার পর Render থেকে URL পাবেন)
-const url = process.env.RENDER_EXTERNAL_URL || `https://yourapp.onrender.com`;
+// Render এর জন্য PUBLIC URL 
+const url = process.env.RENDER_EXTERNAL_URL ;
 const bot = new TelegramBot(token, { webHook: true });
 
-// Telegram কে জানানো হবে: নতুন মেসেজ আসলে কোথায় পাঠাতে হবে
 bot.setWebHook(`${url}/bot${token}`);
 
 // Express route
@@ -23,13 +22,17 @@ app.post(`/bot${token}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// Q/A Database
-const qaDatabase = [
-  { question: 'hello', answer: 'Hello! How can I help you today? 😊' },
-  { question: 'hi', answer: 'Hi there! What’s up? 😄' },
-  { question: 'your name', answer: 'I am Yeasin’s friendly Telegram bot 🤖' },
-  { question: 'how are you', answer: 'I am just code, but feeling awesome! 😎' },
-  { question: 'bye', answer: 'Goodbye! Have a great day! 👋' }
+
+const qaRules = [
+  { pattern: /hello|hi|hey/i, answer: "Hello there! 👋 How are you doing?" },
+  { pattern: /good (morning|night|evening)/i, answer: "Good day to you too! 🌸" },
+  { pattern: /your name|who are you/i, answer: "I am Yeasin’s friendly Telegram bot 🤖" },
+  { pattern: /how are you/i, answer: "I’m just code, but I feel awesome when you talk to me 😎" },
+  { pattern: /thank(s| you)/i, answer: "You’re most welcome! 🙏" },
+  { pattern: /bye|goodbye/i, answer: "Goodbye! Take care 👋" },
+  { pattern: /study|learning/i, answer: "Learning is the key to success 📚 Keep going!" },
+  { pattern: /motivate|inspire/i, answer: "Believe in yourself 🌟 You can achieve anything!" },
+  { pattern: /get|getting/i, answer: "What are you trying to get? 🤔 I can try to help." },
 ];
 
 // মেসেজ হ্যান্ডলার
@@ -37,12 +40,16 @@ bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const userMessage = msg.text?.toLowerCase();
 
-  const match = qaDatabase.find(item => userMessage.includes(item.question));
+  if (!userMessage) return;
+
+  // Rule match খোঁজা
+  const match = qaRules.find(rule => rule.pattern.test(userMessage));
 
   if (match) {
     bot.sendMessage(chatId, match.answer);
   } else {
-    bot.sendMessage(chatId, "Sorry, I don't know the answer to that yet. 😔");
+    
+    bot.sendMessage(chatId, "I don’t know this yet 😔 আমি এখনো কিছু জানি না, আমি মাত্র শিখতেছি 📖");
   }
 });
 
