@@ -33,6 +33,14 @@ async function getGeminiResponse(prompt) {
   }
 }
 
+async function sendLongMessage(chatId, text, options) {
+  const CHUNK_SIZE = 4096;
+  for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+    const chunk = text.substring(i, Math.min(i + CHUNK_SIZE, text.length));
+    await bot.sendMessage(chatId, chunk, options);
+  }
+}
+
 const qaRules = [
   { pattern: /(hello|hi|hey)/i, answer: "Hello there! 👋 How are you doing?" },
   { pattern: /good (morning|night|evening)/i, answer: "Good day to you too! 🌸" },
@@ -80,7 +88,7 @@ bot.on("message", async (msg) => {
 
   const escapedAnswer = escapeMarkdownV2(geminiAnswer);
   
-  bot.sendMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
+  await sendLongMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
 });
 
 app.listen(port, () => {
