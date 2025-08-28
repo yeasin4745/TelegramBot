@@ -17,6 +17,10 @@ bot.setWebHook(`${url}/bot${token}`);
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+function escapeMarkdownV2(text) {
+  return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
+}
+
 async function getGeminiResponse(prompt) {
   try {
     const result = await model.generateContent(prompt);
@@ -73,7 +77,10 @@ bot.on("message", async (msg) => {
   console.log(`No match found. Asking Gemini for: "${userMessage}"`);
   bot.sendChatAction(chatId, 'typing');
   const geminiAnswer = await getGeminiResponse(userMessage);
-  bot.sendMessage(chatId, geminiAnswer, { parse_mode: "MarkdownV2" });
+
+  const escapedAnswer = escapeMarkdownV2(geminiAnswer);
+  
+  bot.sendMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
 });
 
 app.listen(port, () => {
