@@ -17,6 +17,11 @@ bot.setWebHook(`${url}/bot${token}`);
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+// Store for user request limits
+const userLimits = {};
+const DAILY_LIMIT = 5;
+const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+
 function escapeMarkdownV2(text) {
   return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
 }
@@ -82,10 +87,32 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // Rate Limiting Logic
+  const now = Date.now();
+  if (!userLimits[chatId]) {
+    userLimits[chatId] = {
+      count: 0,
+      lastRequestTime: now
+    };
+  }
+
+  const user = userLimits[chatId];
+  if (now - user.lastRequestTime > ONE_DAY_IN_MS) {
+    user.count = 0;
+    user.lastRequestTime = now;
+  }
+  
+  if (user.count >= DAILY_LIMIT) {
+    const nextRequestTime = new Date(user.lastRequestTime + ONE_DAY_IN_MS);
+    bot.sendMessage(chatId, `আপনার দৈনিক ব্যবহারের সীমা শেষ হয়ে গেছে। পরবর্তী প্রশ্ন করতে পারবেন ${nextRequestTime.toLocaleString('bn-BD')} সময়ে।`);
+    return;
+  }
+
+  user.count++;
   console.log(`No match found. Asking Gemini for: "${userMessage}"`);
   bot.sendChatAction(chatId, 'typing');
+  
   const geminiAnswer = await getGeminiResponse(userMessage);
-
   const escapedAnswer = escapeMarkdownV2(geminiAnswer);
   
   await sendLongMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
