@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
+let OpenAI=require('openai')
 
 const token = process.env.TOKEN;
 const port = process.env.PORT || 3000;
@@ -45,6 +46,31 @@ async function sendLongMessage(chatId, text, options) {
     await bot.sendMessage(chatId, chunk, options);
   }
 }
+
+
+
+async function aiResponse(prompt){
+
+const openai = new OpenAI({                               apiKey: geminiApiKey,                                      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
+ });
+
+const res = await openai.chat.completions.create({                                        model: 'models/gemini-1.5-flash-002',                                                   messages: [
+    {
+      role: 'system',
+      content: 'You are a telegram bot ai assistant . I am made by Google. ',
+    },
+    { role: 'user', content: prompt },
+  ],
+});
+
+
+return res.choices[0].message.content
+
+
+}
+
+
+
 
 const qaRules = [
   { pattern: /(hello|hi|hey)/i, answer: "Hello there! 👋 How are you doing?" },
@@ -112,7 +138,7 @@ bot.on("message", async (msg) => {
   console.log(`No match found. Asking Gemini for: "${userMessage}"`);
   bot.sendChatAction(chatId, 'typing');
   
-  const geminiAnswer = await getGeminiResponse(userMessage);
+  const geminiAnswer = await aiResponse(userMessage);
   const escapedAnswer = escapeMarkdownV2(geminiAnswer);
   
   await sendLongMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
