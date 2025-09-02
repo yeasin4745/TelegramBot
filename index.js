@@ -1,138 +1,147 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
 require('dotenv').config();
 
 const token = process.env.TOKEN;
 const port = process.env.PORT || 3000;
 const url = process.env.RENDER_EXTERNAL_URL;
 const geminiApiKey = process.env.GEMINI_API_KEY;
-const ownerName = 'Yeasin';
-const ownerProfession = 'web developer & problem solver';
 
-// Express app setup
 const app = express();
 app.use(express.json());
 
-// Telegram bot setup
 const bot = new TelegramBot(token);
 bot.setWebHook(`${url}/bot${token}`);
 
-// Gemini AI setup
-const genAI = new GoogleGenerativeAI(geminiApiKey);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-// Store for user request limits
-const userLimits = {};
+const userLimits = new Map();
 const DAILY_LIMIT = 5;
-const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+const ONE_DAY_IN_MS = 86400000;
 
-function escapeMarkdownV2(text) {
-  // Common characters to escape in Markdown V2
-  return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+const qaRules = new Map([
+  [/^(hello|hi|hey)$/i, "Hello there! 👋 How are you doing?"],
+  [/^good (morning|night|evening)$/i, "Good day to you too! 🌸"],
+  [/^(your name|who are you)$/i, "I am Yeasin's friendly Telegram bot 🤖"],
+  [/^how are you$/i, "I'm just code, but I feel awesome when you talk to me 😎"],
+  [/^(thank(s| you))$/i, "You're most welcome! 🙏"],
+  [/^(bye|goodbye)$/i, "Goodbye! Take care 👋"],
+]);
+
+const openai = new OpenAI({
+    apiKey: geminiApiKey,
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/models/"
+});
+
+async function aiResponse(prompt, id) {
+    try {
+        const res = await openai.chat.completions.create({
+            model: 'gemini-1.5-flash',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers.',
+                },
+                { role: 'user', content: prompt },
+            ],
+            stream: true
+        });
+
+        let fullResponse = '';
+
+        for await (const chunk of res) {
+            if (chunk.choices[0]?.delta?.content) {
+                fullResponse += chunk.choices[0].delta.content;
+            }
+        }
+
+        if (fullResponse.trim()) {
+            await bot.sendMessage(id, fullResponse);
+        } else {
+            await bot.sendMessage(id, "দুঃখিত, আমি আপনার অনুরোধটি প্রক্রিয়া করতে পারিনি।");
+        }
+
+    } catch (error) {
+        console.error("AI Response Error:", error);
+        await bot.sendMessage(id, "দুঃখিত, একটি সমস্যা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।");
+    }
 }
 
-async function getGeminiResponse(prompt, userId) {
-  try {
-    const chat = model.startChat({
-      history: [
-        {
-          role: 'user',
-          parts: `Hi.`,
-        },
-        {
-          role: 'model',
-          parts: `Hello there! I am a Telegram AI assistant developed by Google. I was built by Yeasin, a professional ${ownerProfession}. How may I help you today?`,
-        },
-      ],
-      generationConfig: {
-        maxOutputTokens: 2000,
-      },
-    });
+function checkRateLimit(chatId) {
+    const now = Date.now();
+    const user = userLimits.get(chatId);
+    
+    if (!user || now - user.lastRequestTime > ONE_DAY_IN_MS) {
+        userLimits.set(chatId, { count: 1, lastRequestTime: now });
+        return { allowed: true };
+    }
 
-    const result = await chat.sendMessage(prompt);
-    const responseText = result.response.text();
+    if (user.count >= DAILY_LIMIT) {
+        const nextRequestTime = new Date(user.lastRequestTime + ONE_DAY_IN_MS);
+        return { 
+            allowed: false, 
+            error: `আপনার দৈনিক অনুরোধের সীমা শেষ হয়েছে। অনুগ্রহ করে ${nextRequestTime.toLocaleString('bn-BD')}-এর পর আবার চেষ্টা করুন।` 
+        };
+    }
 
-    const formattedText = escapeMarkdownV2(responseText);
-
-    await bot.sendMessage(userId, formattedText, { parse_mode: 'MarkdownV2' });
-
-  } catch (error) {
-    console.error("Error fetching from Gemini:", error);
-    await bot.sendMessage(userId, "Sorry, I am unable to answer right now. 😔 Please try again later.");
-  }
+    user.count++;
+    return { allowed: true };
 }
 
-const qaRules = [
-  { pattern: /(hello|hi|hey)/i, answer: "Hello there! 👋 How are you doing?" },
-  { pattern: /good (morning|night|evening)/i, answer: "Good day to you too! 🌸" },
-  { pattern: /(your name|who are you)/i, answer: `I am ${ownerName}’s friendly Telegram bot 🤖` },
-  { pattern: /how are you/i, answer: "I’m just code, but I feel awesome when you talk to me 😎" },
-  { pattern: /(thank(s| you))/i, answer: "You’re most welcome! 🙏" },
-  { pattern: /(bye|goodbye)/i, answer: "Goodbye! Take care 👋" },
-  { pattern: /(study|learning)/i, answer: "Learning is the key to success 📚 Keep going!" },
-  { pattern: /(motivate|inspire)/i, answer: "Believe in yourself 🌟 You can achieve anything!" },
-];
+function getQaResponse(text) {
+    for (const [pattern, response] of qaRules) {
+        if (pattern.test(text)) {
+            return response;
+        }
+    }
+    return null;
+}
 
 app.post(`/bot${token}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
 });
 
 bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  const name = msg.from.first_name || "User";
-  const welcomeMessage = `👋 Welcome ${name}!
-I am a Telegram AI assistant built by Google. My developer is Yeasin, a professional web developer and problem solver.
-You can ask me questions or just chat casually.
-Let’s get started! 🚀`;
-  bot.sendMessage(chatId, welcomeMessage);
-});
-
-qaRules.forEach(rule => {
-  bot.onText(rule.pattern, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, rule.answer);
-  });
+    const name = msg.from.first_name || "User";
+    const welcomeMessage = `👋 Welcome ${name}!
+I am Yeasin's friendly Telegram bot 🤖
+You can say hello, ask me questions, or just chat casually.
+Let's get started! 🚀`;
+    bot.sendMessage(chatId, welcomeMessage);
 });
 
 bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const userMessage = msg.text;
+    const chatId = msg.chat.id;
+    const userMessage = msg.text;
 
-  // Check for commands or predefined rules
-  if (msg.text && (msg.text.startsWith('/') || qaRules.some(rule => rule.pattern.test(userMessage)))) {
-    return;
-  }
+    if (!userMessage || userMessage.startsWith('/')) {
+        return;
+    }
 
-  // Rate Limiting Logic
-  const now = Date.now();
-  if (!userLimits[chatId]) {
-    userLimits[chatId] = {
-      count: 0,
-      lastRequestTime: now
-    };
-  }
+    const qaResponse = getQaResponse(userMessage);
+    if (qaResponse) {
+        return bot.sendMessage(chatId, qaResponse);
+    }
 
-  const user = userLimits[chatId];
-  if (now - user.lastRequestTime > ONE_DAY_IN_MS) {
-    user.count = 0;
-    user.lastRequestTime = now;
-  }
-  
-  if (user.count >= DAILY_LIMIT) {
-    const nextRequestTime = new Date(user.lastRequestTime + ONE_DAY_IN_MS);
-    bot.sendMessage(chatId, `Your daily limit has been reached. Please try again after ${nextRequestTime.toLocaleString('bn-BD')}.`);
-    return;
-  }
+    const rateLimitResult = checkRateLimit(chatId);
+    if (!rateLimitResult.allowed) {
+        return bot.sendMessage(chatId, rateLimitResult.error);
+    }
 
-  user.count++;
-   
-  bot.sendChatAction(chatId, 'typing');
-  
-  getGeminiResponse(userMessage, chatId);
+    await bot.sendChatAction(chatId, 'typing');
+    await aiResponse(userMessage, chatId);
 });
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+    console.log(`Server running on port ${port}`);
 });
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [chatId, user] of userLimits) {
+        if (now - user.lastRequestTime > ONE_DAY_IN_MS * 2) {
+            userLimits.delete(chatId);
+        }
+    }
+}, ONE_DAY_IN_MS);
