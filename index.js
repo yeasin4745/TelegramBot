@@ -49,7 +49,8 @@ async function sendLongMessage(chatId, text, options) {
 
 
 
-async function aiResponse(prompt){
+
+async function aiResponse(prompt,id){
 
 const openai = new OpenAI({                               apiKey: geminiApiKey,                                      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
  });
@@ -61,14 +62,15 @@ const res = await openai.chat.completions.create({                              
     },
     { role: 'user', content: prompt },
   ],
+stream: true
 });
 
-
-return res.choices[0].message.content
-
-
+for await (const chunk of completion) {
+bot.sendMessage(id,chunk.choices[0].message.content);
 }
-
+ bot.sendMessage(id,"Do you have any questions?");
+}
+}
 
 
 
@@ -130,18 +132,16 @@ bot.on("message", async (msg) => {
   
   if (user.count >= DAILY_LIMIT) {
     const nextRequestTime = new Date(user.lastRequestTime + ONE_DAY_IN_MS);
-    bot.sendMessage(chatId, `আপনার দৈনিক ব্যবহারের সীমা শেষ হয়ে গেছে। পরবর্তী প্রশ্ন করতে পারবেন ${nextRequestTime.toLocaleString('bn-BD')} সময়ে।`);
+    bot.sendMessage(chatId, `Your daily limit has been reach ${nextRequestTime.toLocaleString('bn-BD')} try `);
     return;
   }
 
   user.count++;
-  console.log(`No match found. Asking Gemini for: "${userMessage}"`);
+   
   bot.sendChatAction(chatId, 'typing');
   
-  const geminiAnswer = await aiResponse(userMessage);
-  const escapedAnswer = escapeMarkdownV2(geminiAnswer);
-  
-  await sendLongMessage(chatId, escapedAnswer, { parse_mode: "MarkdownV2" });
+ aiResponse(chatID,userMessage);
+   
 });
 
 app.listen(port, () => {
