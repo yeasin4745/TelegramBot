@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const OpenAI = require('openai');
+const axios = require('axios');
 require('dotenv').config();
 
 const token = process.env.TOKEN;
@@ -32,7 +33,18 @@ const openai = new OpenAI({
     baseURL: "https://generativelanguage.googleapis.com/v1beta/models/"
 });
 
-async function aiResponse(prompt, id, imageBase64 = null) {
+async function downloadImage(fileId) {
+    try {
+        const fileUrl = await bot.getFileLink(fileId);
+        const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        return Buffer.from(response.data).toString('base64');
+    } catch (error) {
+        console.error("Image download error:", error);
+        throw new Error("Failed to download image");
+    }
+}
+
+async function aiResponse(prompt, chatId, imageBase64 = null) {
     try {
         const userContent = [{ type: 'text', text: prompt }];
         if (imageBase64) {
@@ -47,7 +59,7 @@ async function aiResponse(prompt, id, imageBase64 = null) {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers.',
+                    content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers in English only.',
                 },
                 { role: 'user', content: userContent },
             ],
@@ -62,14 +74,14 @@ async function aiResponse(prompt, id, imageBase64 = null) {
         }
 
         if (fullResponse.trim()) {
-            await bot.sendMessage(id, fullResponse);
+            await bot.sendMessage(chatId, fullResponse);
         } else {
-            await bot.sendMessage(id, "Sorry, I couldn't process your request.");
+            await bot.sendMessage(chatId, "Sorry, I couldn't process your request.");
         }
 
     } catch (error) {
         console.error("AI Response Error:", error);
-        await bot.sendMessage(id, "Sorry, an error occurred. Please try again in a moment.");
+        await bot.sendMessage(chatId, "Sorry, an error occurred. Please try again in a moment.");
     }
 }
 
@@ -111,11 +123,57 @@ app.post(`/bot${token}`, (req, res) => {
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const name = msg.from.first_name || "User";
-    const welcomeMessage = `👋 Welcome ${name}!\nI am Yeasin's friendly Telegram bot 🤖\nYou can say hello, ask me questions, or just chat casually. Let's get started! 🚀`;
+    const welcomeMessage = `👋 Welcome ${name}!\nI am Yeasin's friendly Telegram bot 🤖\nYou can send me text messages or photos for analysis. Let's get started! 🚀`;
     bot.sendMessage(chatId, welcomeMessage);
 });
 
-bot.on("message", async (msg) => {
+bot.on("photo", async (msg) => {
+    const chatId = msg.chat.id;
+
+    const rateLimitResult = checkRateLimit(chatId);
+    if (!rateLimitResult.allowed) {
+        return bot.sendMessage(chatId, rateLimitResult.error);
+    }
+
+    await bot.sendChatAction(chatId, 'typing');
+    
+    try {
+        const fileId = msg.photo[msg.photo.length - 1].file_id;
+        const imageBase64 = await downloadImage(fileId);
+        const caption = msg.caption || "Analyze this image and describe what you see.";
+        await aiResponse(caption, chatId, imageBase64);
+    } catch (error) {
+        console.error("Photo processing error:", error);
+        await bot.sendMessage(chatId, "Sorry, there was an error processing the image. Please try again later.");
+    }
+});
+
+bot.on("document", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle documents or other file types.");
+});
+
+bot.on("contact", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle contacts or other content types.");
+});
+
+bot.on("sticker", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle stickers or other content types.");
+});
+
+bot.on("voice", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle voice messages or other content types.");
+});
+
+bot.on("video", (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle videos or other content types.");
+});
+
+bot.on("text", async (msg) => {
     const chatId = msg.chat.id;
 
     if (msg.text && msg.text.startsWith('/')) {
@@ -127,33 +185,13 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, rateLimitResult.error);
     }
 
-    if (msg.photo) {
-        await bot.sendChatAction(chatId, 'upload_photo');
-        try {
-            const fileId = msg.photo[msg.photo.length - 1].file_id;
-            const fileStream = bot.getFileStream(fileId);
-            const chunks = [];
-            for await (const chunk of fileStream) {
-                chunks.push(chunk);
-            }
-            const buffer = Buffer.concat(chunks);
-            const imageBase64 = buffer.toString('base64');
-            const caption = msg.caption || "Analyze this image and describe it.";
-            await aiResponse(caption, chatId, imageBase64);
-        } catch (error) {
-            console.error("Photo processing error:", error);
-            await bot.sendMessage(chatId, "Sorry, there was an error processing the image. Please try again later.");
-        }
-    } else if (msg.text) {
-        const qaResponse = getQaResponse(msg.text);
-        if (qaResponse) {
-            return bot.sendMessage(chatId, qaResponse);
-        }
-        await bot.sendChatAction(chatId, 'typing');
-        await aiResponse(msg.text, chatId);
-    } else {
-        return bot.sendMessage(chatId, "Sorry, I can only process text and photos.");
+    const qaResponse = getQaResponse(msg.text);
+    if (qaResponse) {
+        return bot.sendMessage(chatId, qaResponse);
     }
+
+    await bot.sendChatAction(chatId, 'typing');
+    await aiResponse(msg.text, chatId);
 });
 
 app.listen(port, () => {
