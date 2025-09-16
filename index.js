@@ -32,8 +32,16 @@ const openai = new OpenAI({
     baseURL: "https://generativelanguage.googleapis.com/v1beta/models/"
 });
 
-async function aiResponse(prompt, id) {
+async function aiResponse(prompt, id, imageBase64 = null) {
     try {
+        const userContent = [{ type: 'text', text: prompt }];
+        if (imageBase64) {
+            userContent.push({
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
+            });
+        }
+
         const res = await openai.chat.completions.create({
             model: 'gemini-1.5-flash',
             messages: [
@@ -41,13 +49,12 @@ async function aiResponse(prompt, id) {
                     role: 'system',
                     content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers.',
                 },
-                { role: 'user', content: prompt },
+                { role: 'user', content: userContent },
             ],
             stream: true
         });
 
         let fullResponse = '';
-
         for await (const chunk of res) {
             if (chunk.choices[0]?.delta?.content) {
                 fullResponse += chunk.choices[0].delta.content;
@@ -57,19 +64,19 @@ async function aiResponse(prompt, id) {
         if (fullResponse.trim()) {
             await bot.sendMessage(id, fullResponse);
         } else {
-            await bot.sendMessage(id, "দুঃখিত, আমি আপনার অনুরোধটি প্রক্রিয়া করতে পারিনি।");
+            await bot.sendMessage(id, "Sorry, I couldn't process your request.");
         }
 
     } catch (error) {
         console.error("AI Response Error:", error);
-        await bot.sendMessage(id, "দুঃখিত, একটি সমস্যা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন।");
+        await bot.sendMessage(id, "Sorry, an error occurred. Please try again in a moment.");
     }
 }
 
 function checkRateLimit(chatId) {
     const now = Date.now();
     const user = userLimits.get(chatId);
-    
+
     if (!user || now - user.lastRequestTime > ONE_DAY_IN_MS) {
         userLimits.set(chatId, { count: 1, lastRequestTime: now });
         return { allowed: true };
@@ -77,9 +84,9 @@ function checkRateLimit(chatId) {
 
     if (user.count >= DAILY_LIMIT) {
         const nextRequestTime = new Date(user.lastRequestTime + ONE_DAY_IN_MS);
-        return { 
-            allowed: false, 
-            error: `আপনার দৈনিক অনুরোধের সীমা শেষ হয়েছে। অনুগ্রহ করে ${nextRequestTime.toLocaleString('bn-BD')}-এর পর আবার চেষ্টা করুন।` 
+        return {
+            allowed: false,
+            error: `You have reached your daily request limit. Please try again after ${nextRequestTime.toLocaleString('en-US')}.`
         };
     }
 
@@ -104,24 +111,15 @@ app.post(`/bot${token}`, (req, res) => {
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const name = msg.from.first_name || "User";
-    const welcomeMessage = `👋 Welcome ${name}!
-I am Yeasin's friendly Telegram bot 🤖
-You can say hello, ask me questions, or just chat casually.
-Let's get started! 🚀`;
+    const welcomeMessage = `👋 Welcome ${name}!\nI am Yeasin's friendly Telegram bot 🤖\nYou can say hello, ask me questions, or just chat casually. Let's get started! 🚀`;
     bot.sendMessage(chatId, welcomeMessage);
 });
 
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const userMessage = msg.text;
 
-    if (!userMessage || userMessage.startsWith('/')) {
+    if (msg.text && msg.text.startsWith('/')) {
         return;
-    }
-
-    const qaResponse = getQaResponse(userMessage);
-    if (qaResponse) {
-        return bot.sendMessage(chatId, qaResponse);
     }
 
     const rateLimitResult = checkRateLimit(chatId);
@@ -129,8 +127,33 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, rateLimitResult.error);
     }
 
-    await bot.sendChatAction(chatId, 'typing');
-    await aiResponse(userMessage, chatId);
+    if (msg.photo) {
+        await bot.sendChatAction(chatId, 'upload_photo');
+        try {
+            const fileId = msg.photo[msg.photo.length - 1].file_id;
+            const fileStream = bot.getFileStream(fileId);
+            const chunks = [];
+            for await (const chunk of fileStream) {
+                chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+            const imageBase64 = buffer.toString('base64');
+            const caption = msg.caption || "Analyze this image and describe it.";
+            await aiResponse(caption, chatId, imageBase64);
+        } catch (error) {
+            console.error("Photo processing error:", error);
+            await bot.sendMessage(chatId, "Sorry, there was an error processing the image. Please try again later.");
+        }
+    } else if (msg.text) {
+        const qaResponse = getQaResponse(msg.text);
+        if (qaResponse) {
+            return bot.sendMessage(chatId, qaResponse);
+        }
+        await bot.sendChatAction(chatId, 'typing');
+        await aiResponse(msg.text, chatId);
+    } else {
+        return bot.sendMessage(chatId, "Sorry, I can only process text and photos.");
+    }
 });
 
 app.listen(port, () => {
