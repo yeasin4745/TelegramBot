@@ -33,24 +33,24 @@ const openai = new OpenAI({
     baseURL: "https://generativelanguage.googleapis.com/v1beta/models/"
 });
 
-async function downloadImage(fileId) {
+async function downloadFile(fileId) {
     try {
         const fileUrl = await bot.getFileLink(fileId);
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
         return Buffer.from(response.data).toString('base64');
     } catch (error) {
-        console.error("Image download error:", error);
-        throw new Error("Failed to download image");
+        console.error("File download error:", error);
+        throw new Error("Failed to download file");
     }
 }
 
-async function aiResponse(prompt, chatId, imageBase64 = null) {
+async function aiResponse(prompt, chatId, mediaBase64 = null) {
     try {
         const userContent = [{ type: 'text', text: prompt }];
-        if (imageBase64) {
+        if (mediaBase64) {
             userContent.push({
                 type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${imageBase64}` }
+                image_url: { url: `data:image/jpeg;base64,${mediaBase64}` }
             });
         }
 
@@ -59,9 +59,9 @@ async function aiResponse(prompt, chatId, imageBase64 = null) {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers in English only.',
+                    content: 'You are a friendly and helpful Telegram bot assistant. You are made by Yeasin, a passionate programmer from Bangladesh. Your goal is to provide accurate and concise answers in English only.'
                 },
-                { role: 'user', content: userContent },
+                { role: 'user', content: userContent }
             ],
             stream: true
         });
@@ -123,7 +123,7 @@ app.post(`/bot${token}`, (req, res) => {
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const name = msg.from.first_name || "User";
-    const welcomeMessage = `👋 Welcome ${name}!\nI am Yeasin's friendly Telegram bot 🤖\nYou can send me text messages or photos for analysis. Let's get started! 🚀`;
+    const welcomeMessage = `👋 Welcome ${name}!\nI am Yeasin's friendly Telegram bot 🤖\nYou can send me text messages, photos, or videos for analysis. Let's get started! 🚀`;
     bot.sendMessage(chatId, welcomeMessage);
 });
 
@@ -136,10 +136,10 @@ bot.on("photo", async (msg) => {
     }
 
     await bot.sendChatAction(chatId, 'typing');
-    
+
     try {
         const fileId = msg.photo[msg.photo.length - 1].file_id;
-        const imageBase64 = await downloadImage(fileId);
+        const imageBase64 = await downloadFile(fileId);
         const caption = msg.caption || "Analyze this image and describe what you see.";
         await aiResponse(caption, chatId, imageBase64);
     } catch (error) {
@@ -148,29 +148,50 @@ bot.on("photo", async (msg) => {
     }
 });
 
+bot.on("video", async (msg) => {
+    const chatId = msg.chat.id;
+
+    const rateLimitResult = checkRateLimit(chatId);
+    if (!rateLimitResult.allowed) {
+        return bot.sendMessage(chatId, rateLimitResult.error);
+    }
+
+    await bot.sendChatAction(chatId, 'typing');
+
+    try {
+        const fileId = msg.video.file_id;
+        const videoBase64 = await downloadFile(fileId);
+        const caption = msg.caption || "Analyze this video and describe what you see.";
+        await aiResponse(caption, chatId, videoBase64);
+    } catch (error) {
+        console.error("Video processing error:", error);
+        await bot.sendMessage(chatId, "Sorry, there was an error processing the video. Please try again later.");
+    }
+});
+
 bot.on("document", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle documents or other file types.");
+    bot.sendMessage(chatId, "Sorry, I can only process text messages, photos, and videos. I cannot handle documents or other file types.");
 });
 
 bot.on("contact", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle contacts or other content types.");
+    bot.sendMessage(chatId, "Sorry, I can only process text messages, photos, and videos. I cannot handle contacts or other content types.");
 });
 
 bot.on("sticker", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle stickers or other content types.");
+    bot.sendMessage(chatId, "Sorry, I can only process text messages, photos, and videos. I cannot handle stickers or other content types.");
 });
 
 bot.on("voice", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle voice messages or other content types.");
+    bot.sendMessage(chatId, "Sorry, I can only process text messages, photos, and videos. I cannot handle voice messages or other content types.");
 });
 
-bot.on("video", (msg) => {
+bot.on("audio", (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "Sorry, I can only process text messages and photos. I cannot handle videos or other content types.");
+    bot.sendMessage(chatId, "Sorry, I can only process text messages, photos, and videos. I cannot handle audio files or other content types.");
 });
 
 bot.on("text", async (msg) => {
